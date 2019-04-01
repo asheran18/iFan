@@ -16,15 +16,12 @@
 #include "fpga.h"
 #include "server.h"
 
-/******** TODO: This should be done using more permenant vars in a meta file ********/
-bool SCH_ON = false;
-int SCH_START = 0;
-int SCH_END = 0;
-int T_THRESH = -1; //-1 represents threshold not set
-char password[20];	//array for a password upto 20 chars
-/*************************************************************************************/
-
 int main(int argc, char const *argv[]) {
+	/* Init globals */
+	bool SCH_ON = false;
+	int SCH_START = 0;
+	int SCH_END = 0;
+	int T_THRESH = -1; //-1 represents threshold not set
 
 	/* Init memory map of the FPGA*/
 	if(!FPGAInit()){
@@ -79,22 +76,17 @@ int main(int argc, char const *argv[]) {
 
 	/* Set the GPIO pins to write */
 	*(m_gpio_base + 4) = 0xFFFFFFFF;
-	/*	//this creates a TIME_OUT value of 1 second for a connection
-	struct timeval tv;
-	tv.tv_sec = 1;	//1 second
-	tv.tv_usec = 500; //500 microseconds = .5 seconds
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-	*/
+
+
+	/* Let's start the scheduler to handle user-set fan schedules */
+	if (fork() == 0) {
+		execl("./scheduler", "scheduler", (char *)NULL);
+		return 1;
+	}
+
 	/* Process the incomming commands */
 	printf("Server Ready...\n");
 	while(1){
-		/*
-		** TODO: read() polls the socket, and the instructions following it do not execute
-		** until it returns, so we dont check the schedule until another command comes in
-		IDEA: wait on read  for 1 (or X) second(s). Then go to next line of OPCODE
-			This way, everything can continue to function even if no new signal is received.
-
-		*/
 		/* Get the socket and make sure it is valid */
 		valread = read(new_socket, buffer, sizeof(buffer));
 		if(valread != -1) {
@@ -105,11 +97,8 @@ int main(int argc, char const *argv[]) {
 			processStatus = processCommand(cmd);
 			if (processStatus) printf("Invalid command detected and ignored...\n");
 		}
-		/* Check if things are on schedule or if action is required */
-		if (SCH_ON) {
-			printf("Checking scheduling...\n");
-			checkSchedule();
-		}
+
+
 	}
 
 	return 0;
@@ -170,24 +159,30 @@ int processCommand(command* cmd){
 		int end = strToTime((char*)cmd->args[1]);
 		OPCODEsetSchedule(start,end);
 		return 0;
+
 	} else if(strcmp(cmd->opcode, "CLR_SCH") == 0){
 		SCH_ON = false;
 		SCH_START = 0;
 		SCH_END = 0;
 		return 0;
+
 	} else if (cmd->opcode, "SET_THR") == 0){
 		T_THRESH = cmd->args[0];		//reads args[0] for what temp to set threshold as
+
 	} else if(cmd->opcode, "CLR_THR") == 0){
 		T_THRESH = -1;
+
 	} else if(cmd->opcode, "SET_PWD") == 0){
 		password = args[0];
+
 	} else if(cmd->opcode, "TRY_PWD") == 0){
-		if(hash(password) == args[0]){
-			acceptUser(true); //Password is correct and allows user to login
-		} else {
-			acceptUser(false); //Password is incorrect and asks for a retry
-		}
+		// if(hash(password) == args[0]){
+		// 	acceptUser(true); //Password is correct and allows user to login
+		// } else {
+		// 	acceptUser(false); //Password is incorrect and asks for a retry
+		// }
 	}
+
 	// Invalid command
 	} else {
 		return -1;
@@ -211,28 +206,6 @@ void OPCODEsetSchedule(int start, int end){
 
 //-----------------------------------------------------------------------------
 // Utilities
-
-void checkSchedule(){
-	//declaring a time struct
-	time_t rawtime;
-	struct tm * timeinfo;
-	//retrieve current time
-	time(&rawtime);
-	timeinfo = localtime(&rawtime);
-	//get hours and minutes of current time
-  	int hours = timeinfo->tm_hour;
-	int minutes = timeinfo->tm_min;
-	//converts minutes and hours into just minutes
-	int currTime = (60*hours+minutes) - (4*60);
-	if(currTime > SCH_START && currTime < SCH_END){
-		printf("Within scheduled time...Setting fan to ON\n");
-		setFan(FAN_ON);
-	}
-	else {
-		printf("Outside of schedule...Setting fan to OFF\n");
-		setFan(FAN_OFF);
-	}
-}
 
 void setFan(int mode){
 	if(mode == FAN_ON){
