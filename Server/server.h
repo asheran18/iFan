@@ -22,6 +22,9 @@ typedef struct {
   char* args[5][100];   // Explicit support for up to 5 args of size 100 chars each
 } command;
 
+int server_fd, new_socket, valread;
+struct sockaddr_in address;
+
 //-----------------------------------------------------------------------------
 // Main operations
 /* Sets up an easy-to-use interface for command access */
@@ -35,6 +38,8 @@ int processCommand(command * cmd);
 void OPCODEsetFan(int mode);
 /* Handles opcode SET_SCH */
 void OPCODEsetSchedule(int start, int end);
+/* Handles logging in, sends TOK to client */
+void OPCODEacceptUser(bool tok);
 
 //-----------------------------------------------------------------------------
 // Utilities

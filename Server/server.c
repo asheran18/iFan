@@ -33,9 +33,9 @@ int main(int argc, char const *argv[]) {
 	}
 
 	/* Setup for sever */
-	int server_fd, new_socket, valread;
+/*	int server_fd, new_socket, valread;
 	struct sockaddr_in address;
-	int opt = 1;
+*/	int opt = 1;
 	int addrlen = sizeof(address);
 
 	/* Setup for command execution */
@@ -87,6 +87,7 @@ int main(int argc, char const *argv[]) {
 	*/
 	/* Process the incomming commands */
 	printf("Server Ready...\n");
+
 	while(1){
 		/*
 		** TODO: read() polls the socket, and the instructions following it do not execute
@@ -98,7 +99,7 @@ int main(int argc, char const *argv[]) {
 		/* Get the socket and make sure it is valid */
 		valread = read(new_socket, buffer, sizeof(buffer));
 		if(valread != -1) {
-			printf("Command recieved from client\n");
+			printf("Command received from client\n");
 			/* Parse the command and get it ready for processing */
 			command * cmd = getCommand(buffer);
 			/* Process it */
@@ -171,25 +172,24 @@ int processCommand(command* cmd){
 		OPCODEsetSchedule(start,end);
 		return 0;
 	} else if(strcmp(cmd->opcode, "CLR_SCH") == 0){
-		SCH_ON = false;
-		SCH_START = 0;
-		SCH_END = 0;
+		OPCODEclrSch();
 		return 0;
-	} else if (cmd->opcode, "SET_THR") == 0){
-		T_THRESH = cmd->args[0];		//reads args[0] for what temp to set threshold as
+	} else if (cmd->opcode, "SET_THR") == 0){	
+		int temp = atoi(cmd->args[1]);
+		OPCODESetThr(temp);		//reads args[0] for what temp to set threshold as
 	} else if(cmd->opcode, "CLR_THR") == 0){
-		T_THRESH = -1;
+		OPCODESetThr(-1);
 	} else if(cmd->opcode, "SET_PWD") == 0){
 		password = args[0];
 	} else if(cmd->opcode, "TRY_PWD") == 0){
 		if(hash(password) == args[0]){
-			acceptUser(true); //Password is correct and allows user to login
+			OPCODEacceptUser(true); //Password is correct and allows user to login
 		} else {
-			acceptUser(false); //Password is incorrect and asks for a retry
+			OPCODEacceptUser(false); //Password is incorrect and asks for a retry
 		}
 	}
 	// Invalid command
-	} else {
+	else {
 		return -1;
 	}
 }
@@ -207,6 +207,28 @@ void OPCODEsetSchedule(int start, int end){
 	SCH_START = start;
 	SCH_END = end;
 	SCH_ON = true;
+}
+
+void OPCODEclrSch(){
+	SCH_ON = false;
+	SCH_START = 0;
+	SCH_END = 0;	
+}
+
+void OPCODESetThr(int temperature){
+	T_THRESH = temperature;
+}
+void OPCODEacceptUser(bool tok){
+	if(tok == true){
+		//send tok == yes (1) to client
+		char ret_tok = "LOG_TOK,1"
+	} else {
+		//send tok == no (0) to client
+		char ret_tok = "LOG_TOK,0"
+	}
+	
+	//send(server_fd, ret_tok, sizeof(ret_tok), 0);
+
 }
 
 //-----------------------------------------------------------------------------
@@ -228,7 +250,8 @@ void checkSchedule(){
 		printf("Within scheduled time...Setting fan to ON\n");
 		setFan(FAN_ON);
 	}
-	else {
+	else 
+	{
 		printf("Outside of schedule...Setting fan to OFF\n");
 		setFan(FAN_OFF);
 	}
