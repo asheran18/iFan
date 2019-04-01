@@ -14,6 +14,14 @@
 #define FAN_ON 1
 #define FAN_OFF 0
 
+//-----------------------------------------------------------------------------
+// Global variables
+/******** TODO: This should be done using more permenant vars in a meta file ********/
+bool SCH_ON;
+int SCH_START;
+int SCH_END;
+int T_THRESH;
+char password[20];	//array for a password upto 20 chars
 
 //-----------------------------------------------------------------------------
 // Command interface
@@ -47,7 +55,5 @@ void OPCODEacceptUser(bool tok);
 int strToTime(char* str);
 /* Turns the fan to mode: 1 = ON, 0 = OFF */
 void setFan(int mode);
-/* Checks if the fan should be on or off according to the schedule */
-void checkSchedule();
 
 #endif
