@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/socket.h>
@@ -7,21 +8,22 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <pthread.h>
 #include "hwlib.h"
 #include "soc_cv_av/socal/socal.h"
 #include "soc_cv_av/socal/hps.h"
 #include "soc_cv_av/socal/alt_gpio.h"
 #include "hps_0.h"
-#include <stdbool.h>
 #include "fpga.h"
 #include "server.h"
 
 int main(int argc, char const *argv[]) {
 	/* Init globals */
-	bool SCH_ON = false;
-	int SCH_START = 0;
-	int SCH_END = 0;
-	int T_THRESH = -1; //-1 represents threshold not set
+	SCH_ON = false;
+	SCH_START = 0;
+	SCH_END = 0;
+	T_THRESH = -1; //-1 represents threshold not set
 
 	/* Init memory map of the FPGA*/
 	if(!FPGAInit()){
@@ -79,14 +81,14 @@ int main(int argc, char const *argv[]) {
 
 
 	/* Let's start the scheduler to handle user-set fan schedules */
-	if (fork() == 0) {
-		execl("./scheduler", "scheduler", (char *)NULL);
-		return 1;
+	pthread_t scheduler;
+	int t = pthread_create(&scheduler, NULL, checkSchedule, NULL);
+	if (t != 0) {
+		printf("FATAL SERVER ERROR - THREAD CREATION FAILED\n");
 	}
 
 	/* Process the incomming commands */
 	printf("Server Ready...\n");
-
 	while(1){
 		/* Get the socket and make sure it is valid */
 		valread = read(new_socket, buffer, sizeof(buffer));
@@ -98,8 +100,6 @@ int main(int argc, char const *argv[]) {
 			processStatus = processCommand(cmd);
 			if (processStatus) printf("Invalid command detected and ignored...\n");
 		}
-
-
 	}
 
 	return 0;
@@ -165,26 +165,28 @@ int processCommand(command* cmd){
 		OPCODEclrSch();
 		return 0;
 
-	} else if (cmd->opcode, "SET_THR") == 0){	
-		int temp = atoi(cmd->args[1]);
-		OPCODESetThr(temp);		//reads args[0] for what temp to set threshold as
-    
-	} else if(cmd->opcode, "CLR_THR") == 0){
-		OPCODESetThr(-1);
-
-	} else if(cmd->opcode, "SET_PWD") == 0){
-		password = args[0];
-
-	} else if(cmd->opcode, "TRY_PWD") == 0){
+	} else if (strcmp(cmd->opcode, "SET_THR") == 0){	
+		int temp = atoi((char*)cmd->args[0]);
+		OPCODEsetThr(temp);		//reads args[0] for what temp to set threshold as
+		return 0;    
+	} else if(strcmp(cmd->opcode, "CLR_THR") == 0){
+		OPCODEsetThr(-1);
+		return 0;
+	} else if(strcmp(cmd->opcode, "SET_PWD") == 0){
+		password = (char*)cmd->args[0];
+		return 0;
+	} else if(strcmp(cmd->opcode, "TRY_PWD") == 0){
+	/*
 		if(hash(password) == args[0]){
 			OPCODEacceptUser(true); //Password is correct and allows user to login
 		} else {
 			OPCODEacceptUser(false); //Password is incorrect and asks for a retry
-    }
+	  	}
+	*/
+		return 0;
 	}
-
+	else {	
 	// Invalid command
-	else {
 		return -1;
 	}
 }
@@ -199,27 +201,31 @@ void OPCODEsetFan(int mode){
 
 void OPCODEsetSchedule(int start, int end){
 	printf("Setting fan schedule start time to %d and stop time to %d\n", start, end);
+	pthread_mutex_lock(&mutex);
 	SCH_START = start;
 	SCH_END = end;
 	SCH_ON = true;
+	pthread_mutex_unlock(&mutex);
 }
 
 void OPCODEclrSch(){
+	pthread_mutex_lock(&mutex);
 	SCH_ON = false;
 	SCH_START = 0;
-	SCH_END = 0;	
+	SCH_END = 0;
+	pthread_mutex_unlock(&mutex);	
 }
 
-void OPCODESetThr(int temperature){
+void OPCODEsetThr(int temperature){
 	T_THRESH = temperature;
 }
 void OPCODEacceptUser(bool tok){
 	if(tok == true){
 		//send tok == yes (1) to client
-		char ret_tok = "LOG_TOK,1"
+		char ret_tok = "LOG_TOK,1";
 	} else {
 		//send tok == no (0) to client
-		char ret_tok = "LOG_TOK,0"
+		char ret_tok = "LOG_TOK,0";
 	}
 	
 	//send(server_fd, ret_tok, sizeof(ret_tok), 0);
@@ -238,8 +244,39 @@ void setFan(int mode){
 }
 
 int strToTime(char* str){
-  int time = 0;
-  time += 60*atoi(&str[0]);
-  time += atoi(&str[3]);
-  return time;
+  	int time = 0;
+  	time += 60*atoi(&str[0]);
+  	time += atoi(&str[3]);
+  	return time;
+}
+
+/* Checks if the fan should be on or off according to the schedule */
+void *checkSchedule() {
+	while(1) {
+		//declaring a time struct
+		time_t rawtime;
+		struct tm * timeinfo;
+		//retrieve current time
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
+		//get hours and minutes of current time
+	  	int hours = timeinfo->tm_hour;
+		int minutes = timeinfo->tm_min;
+		//converts minutes and hours into just minutes
+		int currTime = (60*hours+minutes) - (4*60);
+		pthread_mutex_lock(&mutex);
+		if (SCH_ON) {
+			if(currTime > SCH_START && currTime < SCH_END){
+				printf("Within scheduled time...Setting fan to ON\n");
+				setFan(FAN_ON);
+			}
+			else {
+				printf("Outside of schedule...Setting fan to OFF\n");
+				setFan(FAN_OFF);
+			}
+		}
+		pthread_mutex_unlock(&mutex);
+		sleep(3);	
+	}
+	pthread_exit(NULL);
 }

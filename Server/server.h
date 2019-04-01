@@ -1,5 +1,7 @@
 #ifndef __SERVER_H__
 #define  __SERVER_H__
+#include <stdbool.h>
+#include <sys/socket.h>
 
 //-----------------------------------------------------------------------------
 // Defines for sockets
@@ -21,7 +23,10 @@ bool SCH_ON;
 int SCH_START;
 int SCH_END;
 int T_THRESH;
-char password[20];	//array for a password upto 20 chars
+char* password;	//array
+int server_fd, new_socket, valread;
+struct sockaddr_in address;
+pthread_mutex_t mutex;
 
 //-----------------------------------------------------------------------------
 // Command interface
@@ -30,8 +35,6 @@ typedef struct {
   char* args[5][100];   // Explicit support for up to 5 args of size 100 chars each
 } command;
 
-int server_fd, new_socket, valread;
-struct sockaddr_in address;
 
 //-----------------------------------------------------------------------------
 // Main operations
@@ -46,6 +49,10 @@ int processCommand(command * cmd);
 void OPCODEsetFan(int mode);
 /* Handles opcode SET_SCH */
 void OPCODEsetSchedule(int start, int end);
+/* Handles opcode CLR_SCH */
+void OPCODEclrSch();
+/* Handles opcode SET_THR */
+void OPCODEsetThr(int temperature);
 /* Handles logging in, sends TOK to client */
 void OPCODEacceptUser(bool tok);
 
@@ -55,5 +62,7 @@ void OPCODEacceptUser(bool tok);
 int strToTime(char* str);
 /* Turns the fan to mode: 1 = ON, 0 = OFF */
 void setFan(int mode);
+/* Checks if the fan should be on or off according to the schedule */
+void *checkSchedule();
 
 #endif
