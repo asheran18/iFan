@@ -145,7 +145,7 @@ command * getCommand(char * buffer) {
 }
 
 int processCommand(command* cmd){
-	printf("OPCODE: %s recieved from client\n", cmd->opcode);
+	printf("OPCODE: %s received from client\n", cmd->opcode);
 
 	if(strcmp(cmd->opcode, "FAN_AON") == 0) {
 		OPCODEsetFan(FAN_ON);
@@ -165,10 +165,10 @@ int processCommand(command* cmd){
 		OPCODEclrSch();
 		return 0;
 
-	} else if (strcmp(cmd->opcode, "SET_THR") == 0){	
+	} else if (strcmp(cmd->opcode, "SET_THR") == 0){
 		int temp = atoi((char*)cmd->args[0]);
 		OPCODEsetThr(temp);		//reads args[0] for what temp to set threshold as
-		return 0;    
+		return 0;
 	} else if(strcmp(cmd->opcode, "CLR_THR") == 0){
 		OPCODEsetThr(-1);
 		return 0;
@@ -185,7 +185,7 @@ int processCommand(command* cmd){
 	*/
 		return 0;
 	}
-	else {	
+	else {
 	// Invalid command
 		return -1;
 	}
@@ -213,7 +213,7 @@ void OPCODEclrSch(){
 	SCH_ON = false;
 	SCH_START = 0;
 	SCH_END = 0;
-	pthread_mutex_unlock(&mutex);	
+	pthread_mutex_unlock(&mutex);
 }
 
 void OPCODEsetThr(int temperature){
@@ -227,7 +227,7 @@ void OPCODEacceptUser(bool tok){
 		//send tok == no (0) to client
 		char ret_tok = "LOG_TOK,0";
 	}
-	
+
 	//send(server_fd, ret_tok, sizeof(ret_tok), 0);
 
 }
@@ -276,7 +276,7 @@ void *checkSchedule() {
 			}
 		}
 		pthread_mutex_unlock(&mutex);
-		sleep(3);	
+		sleep(3);
 	}
 	pthread_exit(NULL);
 }
