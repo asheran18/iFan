@@ -89,6 +89,17 @@ int main(int argc, char const *argv[]) {
 
 	/* Process the incomming commands */
 	printf("Server Ready...\n");
+
+	/* This is where login functionality should be immplemented*/
+	/* Pseudocode:
+		while(not logged in && password is set){
+			read_from_socket(password)
+			if(password = correct){
+				login = yes		//should then exit from while loop
+			}
+		}
+	*/
+
 	while(1){
 		/* Get the socket and make sure it is valid */
 		valread = read(new_socket, buffer, sizeof(buffer));
@@ -100,6 +111,11 @@ int main(int argc, char const *argv[]) {
 			processStatus = processCommand(cmd);
 			if (processStatus) printf("Invalid command detected and ignored...\n");
 		}
+
+		/* Begin Data to Send */
+		transmitData();
+
+
 	}
 
 	return 0;
@@ -231,10 +247,122 @@ void OPCODEacceptUser(bool tok){
 	//send(server_fd, ret_tok, sizeof(ret_tok), 0);
 
 }
+//-----------------------------------------------------------------------------
+// Transmission OPCODE Actuators
+
+/* function for transmitting current temperature */
+int SENDtemp(){
+	char* msg = "AMB_TMP,";
+
+	/* Read temperature from ADC */
+	int temp = ;
+
+	/* Convert temperature to string */
+	char* tempStr = itoa(temp);
+
+
+	/* Set msg*/
+	strcat(msg, tempStr);
+
+	/* Transmit msg*/
+	send(server_fd, msg, sizeof(msg), 0);
+
+	return 0;
+}
+
+/* function for transmitting current fan mode*/
+int SENDmode(){
+
+
+	return 0;
+}
+
+/* function for transmitting current uptime*/
+int SENDuptime(){
+
+	return 0;
+}
+/* function for transmitting current threshold */
+int SENDthreshold(){
+
+	return 0;
+}
+
+int SENDschedule(){
+
+	return 0;
+}
+
+
+//-----------------------------------------------------------------------------
+// Data Transmission Function
+/* main data transmission function*/
+int transmitData(){
+	/* Send Temperature */
+	int error = SENDtemp();
+
+	if(error == 0){
+		printf("Temperature sent...\n");
+	}
+	else {
+		printf("Error Code: %d\n", error);
+	}
+
+	/* Send Current Fan Mode */
+	error = SENDmode();
+
+	if(error == 0){
+		printf("Fan Mode sent...\n");
+	}
+	else {
+		printf("Error Code: %d\n", error);
+	}
+
+	/* Send Fan Uptime (How long its been on/off) */
+	error = SENDuptime();
+
+	if(error == 0){
+		printf("Uptime sent...\n");
+	}
+	else {
+		printf("Error Code: %d\n", error);
+	}
+
+	/* Send Current Threshold */
+	error = SENDthreshold();
+
+	if(error == 0){
+		printf("Current Threshold sent...\n");
+	}
+	else {
+		printf("Error Code: %d\n", error);
+	}
+
+	/* Send Current Schedule */
+	error = SENDschedule();
+
+	if(error == 0){
+		printf("Current Schedule sent...\n");
+	}
+	else {
+		printf("Error Code: %d\n", error);
+	}
+
+	/* Return 0 if no errors */
+	return 0;
+}
 
 //-----------------------------------------------------------------------------
 // Utilities
 
+/* transmits 1 message across the socket */
+int transmitCommand(char* message){
+	/* sets socket stream */
+	send(server_fd, message, sizeof(message), 0);
+	/* Returns 0 if no errors */
+}
+
+/* Sets fan to on or off */
 void setFan(int mode){
 	if(mode == FAN_ON){
 		*((uint32_t *)m_gpio_base) = 0xFFFFFFFF;
@@ -243,6 +371,7 @@ void setFan(int mode){
 	}
 }
 
+/* Converts a string to time in seconds (parsed as: "hh:mm" in 24 hour time */
 int strToTime(char* str){
   	int time = 0;
   	time += 60*atoi(&str[0]);
