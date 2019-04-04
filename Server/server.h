@@ -15,26 +15,35 @@
 // Defines for readability
 #define FAN_ON 1
 #define FAN_OFF 0
+#define MAX_FIFO_SIZE 10
+#define MAX_COMMAND_LENGTH 100
+#define MAX_ARGS 5
 
 //-----------------------------------------------------------------------------
 // Global variables
-/******** TODO: This should be done using more permenant vars in a meta file ********/
+/******** TODO: Some of this should be done using more permenant vars in a meta file ********/
+/* For fan scheduling */
 bool SCH_ON;
 int SCH_START;
 int SCH_END;
+/* For fan thresholding */
 int T_THRESH;
-char* password;	//array
+/* For socket programming */
 int server_fd, new_socket, valread;
 struct sockaddr_in address;
+/* For threading */
 pthread_mutex_t mutex;
+/* For authentication */
+char * password;
+/* For job processing */
+char * mailboxQueue[MAX_FIFO_SIZE] = {0};
 
 //-----------------------------------------------------------------------------
-// Command interface
+// Structures for easy interfacing
 typedef struct {
-  char opcode[8];       // There are many opcodes (always 7 chars), see documentation
-  char* args[5][100];   // Explicit support for up to 5 args of size 100 chars each
+  char opcode[8];                                 // There are many opcodes (always 7 chars), see documentation
+  char* args[MAX_ARGS][MAX_COMMAND_LENGTH];       // Explicit support for up to 5 args of size 100 chars each
 } command;
-
 
 //-----------------------------------------------------------------------------
 // Main operations
@@ -44,6 +53,19 @@ command * getCommand(char * buffer);
 int processCommand(command * cmd);
 /* Sends current fan information to the client to be displayed in the app*/
 int transmitData();
+/* Watches for incoming packets and adds them to the processing queue */
+void * checkMailbox()
+/* Checks if the fan should be on or off according to the schedule */
+void * checkSchedule();
+
+//-----------------------------------------------------------------------------
+// FIFO queue operations - assumed to be performed on gloabal variable "cmdQueue"
+/* Tries to add a command to the back of the queue if possible, returns -1 if failed */
+int tryEnqueueCommand(char * incomingCommand);
+/* Returns true if the queue is empty*/
+bool queueEmpty();
+/* Returns the first command in the queue and removes it from the queue */
+char * dequeueCommand();
 
 //-----------------------------------------------------------------------------
 // Opcode actuators
@@ -73,13 +95,11 @@ int SENDschedule();
 
 //-----------------------------------------------------------------------------
 // Utilities
+/* Transmits 1 message across the socket */
+int transmitCommand(char* message);
 /* Converts a string of time into a workable format */
 int strToTime(char* str);
 /* Turns the fan to mode: 1 = ON, 0 = OFF */
 void setFan(int mode);
-/* Checks if the fan should be on or off according to the schedule */
-void *checkSchedule();
-/* Transmits 1 message across the socket */
-int transmitCommand(char* message);
 
 #endif

@@ -19,10 +19,7 @@
 #include "server.h"
 
 int main(int argc, char const *argv[]) {
-	/* Init globals */
-	SCH_ON = false;
-	SCH_START = 0;
-	SCH_END = 0;
+
 	T_THRESH = -1; //-1 represents threshold not set
 
 	/* Init memory map of the FPGA*/
@@ -31,64 +28,22 @@ int main(int argc, char const *argv[]) {
 		return 0;
 	}
 
-	/* Setup for sever */
-/*	int server_fd, new_socket, valread;
-	struct sockaddr_in address;
-*/	int opt = 1;
-	int addrlen = sizeof(address);
-
-	/* Setup for command execution */
-	char buffer[1024] = {0};
-	int processStatus;
-
-	/* Creating socket file descriptor */
-	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
-	{
-		perror("socket failed");
-		exit(EXIT_FAILURE);
-	}
-
-	/* Forcefully attaching socket to the port 8080 */
-	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)))
-	{
-		perror("setsockopt");
-		exit(EXIT_FAILURE);
-	}
-	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = INADDR_ANY;
-	address.sin_port = htons( PORT );
-
-	/* Forcefully attaching socket to the port 8080 */
-	if (bind(server_fd, (struct sockaddr *)&address, sizeof(address))<0)
-	{
-		perror("bind failed");
-		exit(EXIT_FAILURE);
-	}
-	if (listen(server_fd, 3) < 0)
-	{
-		perror("listen");
-		exit(EXIT_FAILURE);
-	}
-	if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0)
-	{
-		perror("accept");
-		exit(EXIT_FAILURE);
-	}
-
-
 	/* Set the GPIO pins to write */
 	*(m_gpio_base + 4) = 0xFFFFFFFF;
 
-
-	/* Let's start the scheduler to handle user-set fan schedules */
-	pthread_t scheduler;
-	int t = pthread_create(&scheduler, NULL, checkSchedule, NULL);
-	if (t != 0) {
+	/* Let's start the incoming command mailbox to handle user commands */
+	pthread_t mailbox;
+	int m = pthread_create(&mailbox, NULL, checkMailbox, NULL);
+	if (m != 0) {
 		printf("FATAL SERVER ERROR - THREAD CREATION FAILED\n");
 	}
 
-	/* Process the incomming commands */
-	printf("Server Ready...\n");
+	/* Let's start the scheduler to handle user-set fan schedules */
+	pthread_t scheduler;
+	int s = pthread_create(&scheduler, NULL, checkSchedule, NULL);
+	if (s != 0) {
+		printf("FATAL SERVER ERROR - THREAD CREATION FAILED\n");
+	}
 
 	/* This is where login functionality should be immplemented*/
 	/* Pseudocode:
@@ -101,12 +56,12 @@ int main(int argc, char const *argv[]) {
 	*/
 
 	while(1){
-		/* Get the socket and make sure it is valid */
-		valread = read(new_socket, buffer, sizeof(buffer));
-		if(valread != -1) {
-			printf("Command received from client\n");
+		/* Check if there is a command in the queue */
+		if(!queueEmpty()) {
+			printf("Processing command at the front of the queue...\n");
 			/* Parse the command and get it ready for processing */
-			command * cmd = getCommand(buffer);
+			char * firstCommand = dequeueCommand();
+			command * cmd = getCommand(firstCommand);
 			/* Process it */
 			processStatus = processCommand(cmd);
 			if (processStatus) printf("Invalid command detected and ignored...\n");
@@ -114,8 +69,6 @@ int main(int argc, char const *argv[]) {
 
 		/* Begin Data to Send */
 		transmitData();
-
-
 	}
 
 	return 0;
@@ -131,7 +84,7 @@ command * getCommand(char * buffer) {
 	/* Check if there are enough chars for a valid opcode and get the opcode */
 	if (strlen(buffer) < 7) {
 		free(newCmd);
-		 return NULL;
+		return NULL;
 	}
 	strncpy(newCmd->opcode, buffer, 7);
 	newCmd->opcode[7] = '\0';
@@ -262,6 +215,135 @@ int transmitData(){
 	return 0;
 }
 
+void * checkMailbox() {
+	/* Init globals */
+	SCH_ON = false;
+	SCH_START = 0;
+	SCH_END = 0;
+
+	/* Setup for sever */
+	int opt = 1;
+	int addrlen = sizeof(address);
+
+	/* Setup for command execution */
+	char buffer[MAX_COMMAND_LENGTH] = {0};
+	int processStatus;
+
+	/* Creating socket file descriptor */
+	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+	{
+		perror("socket failed");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Forcefully attaching socket to the port 8080 */
+	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)))
+	{
+		perror("setsockopt");
+		exit(EXIT_FAILURE);
+	}
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = INADDR_ANY;
+	address.sin_port = htons( PORT );
+
+	/* Forcefully attaching socket to the port 8080 */
+	if (bind(server_fd, (struct sockaddr *)&address, sizeof(address))<0)
+	{
+		perror("bind failed");
+		exit(EXIT_FAILURE);
+	}
+	if (listen(server_fd, 3) < 0)
+	{
+		perror("listen");
+		exit(EXIT_FAILURE);
+	}
+	if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0)
+	{
+		perror("accept");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Process the incomming commands */
+	printf("Server Ready...\n");
+
+	while(1){
+		/* Get the socket and make sure it is valid */
+		valread = read(new_socket, buffer, sizeof(buffer));
+		if(valread != -1) {
+			printf("Command received from client\n");
+			/* Try to enqueue the command */
+			// TODO: It may be a good idea to loop here until there is space
+			enqueueSuccess = tryEnqueueCommand(buffer);
+			if (enqueueSuccess < 0) {
+				printf("WANRING - Could not enqueue command :: %s :: Command dropped!\n", buffer);
+			}
+		}
+		// TODO: may want to wait here if data is being sent (can used a shared variable to check?)
+	}
+}
+
+void * checkSchedule() {
+	while(1) {
+		//declaring a time struct
+		time_t rawtime;
+		struct tm * timeinfo;
+		//retrieve current time
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
+		//get hours and minutes of current time
+	  	int hours = timeinfo->tm_hour;
+		int minutes = timeinfo->tm_min;
+		//converts minutes and hours into just minutes
+		int currTime = (60*hours+minutes) - (4*60);
+		pthread_mutex_lock(&mutex);
+		if (SCH_ON) {
+			if(currTime > SCH_START && currTime < SCH_END){
+				printf("Within scheduled time...Setting fan to ON\n");
+				setFan(FAN_ON);
+			}
+			else {
+				printf("Outside of schedule...Setting fan to OFF\n");
+				setFan(FAN_OFF);
+			}
+		}
+		pthread_mutex_unlock(&mutex);
+		sleep(3);
+	}
+	pthread_exit(NULL);
+}
+
+//-----------------------------------------------------------------------------
+// FIFO queue operations
+
+int tryEnqueueCommand(char * incomingCommand) {
+	int i;
+	/* Find a spot */
+	for (i = 0; i < MAX_FIFO_SIZE; i++) {
+		if (mailboxQueue[i] == 0) {
+			mailboxQueue[i] = incomingCommand;
+			return 0;
+		}
+	}
+	/* If we have not returned yet, we do not have room */
+	return -1;
+}
+
+bool queueEmpty() {
+	if (mailboxQueue[0] == 0) return true;
+	return false;
+}
+
+char * dequeueCommand() {
+	char * retCommand = mailboxQueue[0];
+	/* Shift the queue*/
+  int i;
+  for (i = 0; i < MAX_FIFO_SIZE - 1; i++) {
+    mailboxQueue[i] = mailboxQueue[i + 1];
+  }
+  mailboxQueue[MAX_FIFO_SIZE-1] = 0; // Clear the back of the queue if it was previously full
+  return retCommand;
+}
+
 //-----------------------------------------------------------------------------
 // Opcode actuators
 
@@ -369,34 +451,4 @@ int strToTime(char* str){
   	time += 60*atoi(&str[0]);
   	time += atoi(&str[3]);
   	return time;
-}
-
-void *checkSchedule() {
-	while(1) {
-		//declaring a time struct
-		time_t rawtime;
-		struct tm * timeinfo;
-		//retrieve current time
-		time(&rawtime);
-		timeinfo = localtime(&rawtime);
-		//get hours and minutes of current time
-	  	int hours = timeinfo->tm_hour;
-		int minutes = timeinfo->tm_min;
-		//converts minutes and hours into just minutes
-		int currTime = (60*hours+minutes) - (4*60);
-		pthread_mutex_lock(&mutex);
-		if (SCH_ON) {
-			if(currTime > SCH_START && currTime < SCH_END){
-				printf("Within scheduled time...Setting fan to ON\n");
-				setFan(FAN_ON);
-			}
-			else {
-				printf("Outside of schedule...Setting fan to OFF\n");
-				setFan(FAN_OFF);
-			}
-		}
-		pthread_mutex_unlock(&mutex);
-		sleep(3);
-	}
-	pthread_exit(NULL);
 }
