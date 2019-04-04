@@ -42,7 +42,7 @@ char * mailboxQueue[MAX_FIFO_SIZE] = {0};
 // Structures for easy interfacing
 typedef struct {
   char opcode[8];                                 // There are many opcodes (always 7 chars), see documentation
-  char* args[MAX_ARGS][MAX_COMMAND_LENGTH];       // Explicit support for up to 5 args of size 100 chars each
+  char args[MAX_ARGS][MAX_COMMAND_LENGTH];        // Explicit support for up to <MAX_ARGS> args
 } command;
 
 //-----------------------------------------------------------------------------

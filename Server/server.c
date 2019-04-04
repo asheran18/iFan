@@ -19,7 +19,8 @@
 #include "server.h"
 
 int main(int argc, char const *argv[]) {
-
+	/* Some initialization */
+	mutex = PTHREAD_MUTEX_INITIALIZER;
 	T_THRESH = -1; //-1 represents threshold not set
 
 	/* Init memory map of the FPGA*/
@@ -57,6 +58,7 @@ int main(int argc, char const *argv[]) {
 
 	while(1){
 		/* Check if there is a command in the queue */
+		pthread_mutex_lock(&mutex);
 		if(!queueEmpty()) {
 			printf("Processing command at the front of the queue...\n");
 			/* Parse the command and get it ready for processing */
@@ -66,7 +68,8 @@ int main(int argc, char const *argv[]) {
 			processStatus = processCommand(cmd);
 			if (processStatus) printf("Invalid command detected and ignored...\n");
 		}
-
+		pthread_mutex_unlock(&mutex);
+		sleep(1);
 		/* Begin Data to Send */
 		transmitData();
 	}
@@ -80,6 +83,11 @@ int main(int argc, char const *argv[]) {
 command * getCommand(char * buffer) {
 	/* A pointer to this will be returned */
 	command * newCmd = malloc(sizeof(command));
+
+  if (newCmd == NULL) {
+    printf("FATAL SERVER ERROR - malloc failed\n");
+    return NULL;
+  }
 
 	/* Check if there are enough chars for a valid opcode and get the opcode */
 	if (strlen(buffer) < 7) {
@@ -95,15 +103,15 @@ command * getCommand(char * buffer) {
 	int i = 8;
 	while (buffer[i]) {
 		if (buffer[i] == ',') {
-			/* Grab the substring from the last comma to this comma*/
-			strncpy((char*)newCmd->args[argnum], &buffer[sub], (i - sub));
+			/* Grab the substring from the last comma to this comma */
+			strncpy(newCmd->args[argnum], buffer + sub, (i - sub));
 			newCmd->args[argnum][i-sub] = '\0';
-			argnum ++;
+      argnum ++;
 			sub = i + 1;
 		}
 		else if (buffer[i+1] == '\0') {
 			/* Grab the substring from the last comma to the end */
-			strncpy((char*)newCmd->args[argnum], &buffer[sub], (i + 1 - sub));
+			strncpy(newCmd->args[argnum], buffer + sub, (i + 1 - sub));
 			newCmd->args[argnum][i + 1 -sub] = '\0';
 		}
 		i++;
@@ -217,9 +225,11 @@ int transmitData(){
 
 void * checkMailbox() {
 	/* Init globals */
+	pthread_mutex_lock(&mutex);
 	SCH_ON = false;
 	SCH_START = 0;
 	SCH_END = 0;
+	pthread_mutex_unlock(&mutex);
 
 	/* Setup for sever */
 	int opt = 1;
@@ -273,10 +283,12 @@ void * checkMailbox() {
 			printf("Command received from client\n");
 			/* Try to enqueue the command */
 			// TODO: It may be a good idea to loop here until there is space
+			pthread_mutex_lock(&mutex);
 			enqueueSuccess = tryEnqueueCommand(buffer);
 			if (enqueueSuccess < 0) {
-				printf("WANRING - Could not enqueue command :: %s :: Command dropped!\n", buffer);
+				printf("WARNING - Could not enqueue command :: %s :: Command dropped!\n", buffer);
 			}
+			pthread_mutex_unlock(&mutex);
 		}
 		// TODO: may want to wait here if data is being sent (can used a shared variable to check?)
 	}
@@ -291,7 +303,7 @@ void * checkSchedule() {
 		time(&rawtime);
 		timeinfo = localtime(&rawtime);
 		//get hours and minutes of current time
-	  	int hours = timeinfo->tm_hour;
+	  int hours = timeinfo->tm_hour;
 		int minutes = timeinfo->tm_min;
 		//converts minutes and hours into just minutes
 		int currTime = (60*hours+minutes) - (4*60);
