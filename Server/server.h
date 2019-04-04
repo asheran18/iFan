@@ -42,6 +42,8 @@ typedef struct {
 command * getCommand(char * buffer);
 /* Decodes and processes the command by calling the correct function with the correct args*/
 int processCommand(command * cmd);
+/* Sends current fan information to the client to be displayed in the app*/
+int transmitData();
 
 //-----------------------------------------------------------------------------
 // Opcode actuators
@@ -57,6 +59,19 @@ void OPCODEsetThr(int temperature);
 void OPCODEacceptUser(bool tok);
 
 //-----------------------------------------------------------------------------
+// Transmission to the client
+/* Function for transmitting current temperature */
+int SENDtemp();
+/* Function for transmitting current fan mode*/
+int SENDmode();
+/* Function for transmitting current uptime*/
+int SENDuptime();
+/* Function for transmitting current threshold */
+int SENDthreshold();
+/* Function for transmitting current schedule */
+int SENDschedule();
+
+//-----------------------------------------------------------------------------
 // Utilities
 /* Converts a string of time into a workable format */
 int strToTime(char* str);
@@ -64,5 +79,7 @@ int strToTime(char* str);
 void setFan(int mode);
 /* Checks if the fan should be on or off according to the schedule */
 void *checkSchedule();
+/* Transmits 1 message across the socket */
+int transmitCommand(char* message);
 
 #endif

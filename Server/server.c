@@ -207,96 +207,6 @@ int processCommand(command* cmd){
 	}
 }
 
-//-----------------------------------------------------------------------------
-// Opcode actuators
-
-void OPCODEsetFan(int mode){
-	printf("Setting fan to mode: %d\n", mode);
-	setFan(mode);
-}
-
-void OPCODEsetSchedule(int start, int end){
-	printf("Setting fan schedule start time to %d and stop time to %d\n", start, end);
-	pthread_mutex_lock(&mutex);
-	SCH_START = start;
-	SCH_END = end;
-	SCH_ON = true;
-	pthread_mutex_unlock(&mutex);
-}
-
-void OPCODEclrSch(){
-	pthread_mutex_lock(&mutex);
-	SCH_ON = false;
-	SCH_START = 0;
-	SCH_END = 0;
-	pthread_mutex_unlock(&mutex);
-}
-
-void OPCODEsetThr(int temperature){
-	T_THRESH = temperature;
-}
-void OPCODEacceptUser(bool tok){
-	if(tok == true){
-		//send tok == yes (1) to client
-		char ret_tok = "LOG_TOK,1";
-	} else {
-		//send tok == no (0) to client
-		char ret_tok = "LOG_TOK,0";
-	}
-
-	//send(server_fd, ret_tok, sizeof(ret_tok), 0);
-
-}
-//-----------------------------------------------------------------------------
-// Transmission OPCODE Actuators
-
-/* function for transmitting current temperature */
-int SENDtemp(){
-	char* msg = "AMB_TMP,";
-
-	/* Read temperature from ADC */
-	int temp = ;
-
-	/* Convert temperature to string */
-	char* tempStr = itoa(temp);
-
-
-	/* Set msg*/
-	strcat(msg, tempStr);
-
-	/* Transmit msg*/
-	send(server_fd, msg, sizeof(msg), 0);
-
-	return 0;
-}
-
-/* function for transmitting current fan mode*/
-int SENDmode(){
-
-
-	return 0;
-}
-
-/* function for transmitting current uptime*/
-int SENDuptime(){
-
-	return 0;
-}
-/* function for transmitting current threshold */
-int SENDthreshold(){
-
-	return 0;
-}
-
-int SENDschedule(){
-
-	return 0;
-}
-
-
-//-----------------------------------------------------------------------------
-// Data Transmission Function
-/* main data transmission function*/
 int transmitData(){
 	/* Send Temperature */
 	int error = SENDtemp();
@@ -353,16 +263,99 @@ int transmitData(){
 }
 
 //-----------------------------------------------------------------------------
+// Opcode actuators
+
+void OPCODEsetFan(int mode){
+	printf("Setting fan to mode: %d\n", mode);
+	setFan(mode);
+}
+
+void OPCODEsetSchedule(int start, int end){
+	printf("Setting fan schedule start time to %d and stop time to %d\n", start, end);
+	pthread_mutex_lock(&mutex);
+	SCH_START = start;
+	SCH_END = end;
+	SCH_ON = true;
+	pthread_mutex_unlock(&mutex);
+}
+
+void OPCODEclrSch(){
+	pthread_mutex_lock(&mutex);
+	SCH_ON = false;
+	SCH_START = 0;
+	SCH_END = 0;
+	pthread_mutex_unlock(&mutex);
+}
+
+void OPCODEsetThr(int temperature){
+	T_THRESH = temperature;
+}
+
+void OPCODEacceptUser(bool tok){
+	if(tok == true){
+		//send tok == yes (1) to client
+		char ret_tok = "LOG_TOK,1";
+	} else {
+		//send tok == no (0) to client
+		char ret_tok = "LOG_TOK,0";
+	}
+
+	//send(server_fd, ret_tok, sizeof(ret_tok), 0);
+
+}
+
+//-----------------------------------------------------------------------------
+// Transmission to the client
+
+int SENDtemp(){
+	char* msg = "AMB_TMP,";
+
+	/* Read temperature from ADC */
+	int temp = ;
+
+	/* Convert temperature to string */
+	char* tempStr = itoa(temp);
+
+
+	/* Set msg*/
+	strcat(msg, tempStr);
+
+	/* Transmit msg*/
+	send(server_fd, msg, sizeof(msg), 0);
+
+	return 0;
+}
+
+int SENDmode(){
+
+
+	return 0;
+}
+
+int SENDuptime(){
+
+	return 0;
+}
+
+int SENDthreshold(){
+
+	return 0;
+}
+
+int SENDschedule(){
+
+	return 0;
+}
+
+//-----------------------------------------------------------------------------
 // Utilities
 
-/* transmits 1 message across the socket */
 int transmitCommand(char* message){
 	/* sets socket stream */
 	send(server_fd, message, sizeof(message), 0);
 	/* Returns 0 if no errors */
 }
 
-/* Sets fan to on or off */
 void setFan(int mode){
 	if(mode == FAN_ON){
 		*((uint32_t *)m_gpio_base) = 0xFFFFFFFF;
@@ -371,7 +364,6 @@ void setFan(int mode){
 	}
 }
 
-/* Converts a string to time in seconds (parsed as: "hh:mm" in 24 hour time */
 int strToTime(char* str){
   	int time = 0;
   	time += 60*atoi(&str[0]);
@@ -379,7 +371,6 @@ int strToTime(char* str){
   	return time;
 }
 
-/* Checks if the fan should be on or off according to the schedule */
 void *checkSchedule() {
 	while(1) {
 		//declaring a time struct
