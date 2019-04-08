@@ -6,6 +6,7 @@
 //-----------------------------------------------------------------------------
 // Defines for sockets
 #define PORT 8080
+#define OUTPORT 8081
 #define SO_REUSEPORT 15
 #define HW_REGS_BASE ( ALT_STM_OFST )
 #define HW_REGS_SPAN ( 0x04000000 )
@@ -29,10 +30,9 @@ int SCH_END;
 /* For fan thresholding */
 int T_THRESH;
 /* For socket programming */
-int server_fd, new_socket, valread;
-struct sockaddr_in address;
 /* For threading */
-pthread_mutex_t mutex;
+pthread_mutex_t mutex_mbox;
+pthread_mutex_t mutex_sch;
 /* For authentication */
 char * password;
 /* For job processing */
@@ -52,9 +52,9 @@ command * getCommand(char * buffer);
 /* Decodes and processes the command by calling the correct function with the correct args*/
 int processCommand(command * cmd);
 /* Sends current fan information to the client to be displayed in the app*/
-int transmitData();
+void * transmitData();
 /* Watches for incoming packets and adds them to the processing queue */
-void * checkMailbox()
+void * checkMailbox();
 /* Checks if the fan should be on or off according to the schedule */
 void * checkSchedule();
 
@@ -83,15 +83,15 @@ void OPCODEacceptUser(bool tok);
 //-----------------------------------------------------------------------------
 // Transmission to the client
 /* Function for transmitting current temperature */
-int SENDtemp();
+void SENDtemp();
 /* Function for transmitting current fan mode*/
-int SENDmode();
+void SENDmode();
 /* Function for transmitting current uptime*/
-int SENDuptime();
+void SENDuptime();
 /* Function for transmitting current threshold */
-int SENDthreshold();
+void SENDthreshold();
 /* Function for transmitting current schedule */
-int SENDschedule();
+void SENDschedule();
 
 //-----------------------------------------------------------------------------
 // Utilities
