@@ -7,6 +7,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <time.h>
+#include <math.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <pthread.h>
@@ -34,19 +35,24 @@ int main(int argc, char const *argv[]) {
 		return 0;
 	}
 
-	/* Set the GPIO pins to write */
+	/* Set the GPIO pins to write and prep the ADC*/
 	*(m_gpio_base + 4) = 0xFFFFFFFF;
+	WriteADC(1,0);
+
+	/* Set up a TCP Connection */
+	int * socket = malloc(sizeof(int));
+	setupTCPConnection(socket);
 
 	/* Let's start the incoming command mailbox to handle user commands */
 	pthread_t mailbox;
-	int m = pthread_create(&mailbox, NULL, checkMailbox, NULL);
+	int m = pthread_create(&mailbox, NULL, checkMailbox, (void *)socket);
 	if (m != 0) {
 		printf("FATAL SERVER ERROR - THREAD CREATION FAILED\n");
 	}
 		
 	/* Let's start the sender to give the client the fan data */
 	pthread_t sender;
-	int t = pthread_create(&sender, NULL, transmitData, NULL);
+	int t = pthread_create(&sender, NULL, transmitData, (void *)socket);
 	if (t != 0) {
 		printf("FATAL SERVER ERROR - THREAD CREATION FAILED\n");
 	}
@@ -186,111 +192,30 @@ int processCommand(command* cmd){
 	}
 }
 
-void * transmitData(){
-	/* Setup for sever */
-	int server_fd, new_socket, valread;
-	struct sockaddr_in address;
-	int opt = 1;
-	int addrlen = sizeof(address);
-
-	/* Creating socket file descriptor */
-	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
-	{
-		perror("socket failed");
-		exit(EXIT_FAILURE);
-	}
-
-	/* Forcefully attaching socket to the port 8080 */
-	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)))
-	{
-		perror("setsockopt");
-		exit(EXIT_FAILURE);
-	}
-	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = INADDR_ANY;
-	address.sin_port = htons(OUTPORT);
-
-	/* Forcefully attaching socket to the port 8080 */
-	if (bind(server_fd, (struct sockaddr *)&address, sizeof(address))<0)
-	{
-		perror("bind failed");
-		exit(EXIT_FAILURE);
-	}
-	if (listen(server_fd, 3) < 0)
-	{
-		perror("listen");
-		exit(EXIT_FAILURE);
-	}
-	if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0)
-	{
-		perror("accept");
-		exit(EXIT_FAILURE);
-	}
-
+void * transmitData(void * new_socket){
 	/* When the connection has been established, start sending data */
 	printf("Server sending thread ready...\n");
+	
 	while(1) {
-		char message[MAX_COMMAND_LENGTH] = "Data from server...";
-		send((int)new_socket, message, sizeof(message), 0);
+		SENDtemp(*((int *)new_socket));
 		sleep(4);
 	}
 	pthread_exit(NULL);	
 }
 
-void * checkMailbox() {
-	/* Setup for sever */
-	int server_fd, new_socket, valread;
-	struct sockaddr_in address;
-	int opt = 1;
-	int addrlen = sizeof(address);
-
-	/* Setup for command execution */
-	char buffer[MAX_COMMAND_LENGTH] = {0};
-	//int processStatus;
-
-	/* Creating socket file descriptor */
-	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
-	{
-		perror("socket failed");
-		exit(EXIT_FAILURE);
-	}
-
-	/* Forcefully attaching socket to the port 8080 */
-	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)))
-	{
-		perror("setsockopt");
-		exit(EXIT_FAILURE);
-	}
-	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = INADDR_ANY;
-	address.sin_port = htons( PORT );
-
-	/* Forcefully attaching socket to the port 8080 */
-	if (bind(server_fd, (struct sockaddr *)&address, sizeof(address))<0)
-	{
-		perror("bind failed");
-		exit(EXIT_FAILURE);
-	}
-	if (listen(server_fd, 3) < 0)
-	{
-		perror("listen");
-		exit(EXIT_FAILURE);
-	}
-	if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0)
-	{
-		perror("accept");
-		exit(EXIT_FAILURE);
-	}
-
+void * checkMailbox(void * new_socket) {
 	/* When the connection has been established, start receiving data */
 	printf("Server receiving thread ready...\n");
 	
-	/* Process the incomming commands */
+	/* Setup for command execution */
 	int enqueueSuccess;
+	int valread;	
+	char buffer[MAX_COMMAND_LENGTH] = {0};
+
+	/* Process the incomming commands */	
 	while(1){
 		/* Get the socket and make sure it is valid */
-		
-		valread = read(new_socket, buffer, sizeof(buffer));
+		valread = read(*((int *)new_socket), buffer, sizeof(buffer));
 		if(valread > 0 && strcmp(buffer,"")) {
 			printf("Command received from client\n");
 			printf("Command plain text is : %s\n", buffer);
@@ -421,8 +346,28 @@ void OPCODEacceptUser(bool tok){
 //-----------------------------------------------------------------------------
 // Transmission to the client
 
-void SENDtemp(){
-
+void SENDtemp(int socket){
+	uint32_t adcValue;
+	int address = 0;
+	ReadADC(&adcValue, address);
+	/************ Its fucked beyond this point ******************/
+	// Some computation is necessary to get the temperature
+	float res = (4095.0/(float)adcValue - 1.0);
+	res = 5.0 * 9960.0 - res + 9960.0;
+	res = res/5.0;
+ 
+	float tmp = res/2200.0;
+	tmp = log(tmp);
+	float tBeta = 1.0/(float)BETA;
+	tmp = tBeta*tmp;
+	float Temperature = 1.0/298.15 + tmp;
+	Temperature = 1.0/Temperature; 	
+	Temperature = Temperature - 273.15;
+	fprintf(stderr, "ADC = %d, Temperature = %f, R = %f\n", adcValue, Temperature, res);
+	/************ Its fucked above this point *******************/
+	char buffer[MAX_COMMAND_LENGTH] = {0};
+	sprintf(buffer, "%f", Temperature);
+	send(socket, buffer, sizeof(buffer), 0);
 }
 
 void SENDmode(){
@@ -443,6 +388,51 @@ void SENDschedule(){
 
 //-----------------------------------------------------------------------------
 // Utilities
+
+void setupTCPConnection(int * ret_socket) {
+	/* Setup for sever */
+	int server_fd, new_socket;
+	struct sockaddr_in address;
+	int opt = 1;
+	int addrlen = sizeof(address);
+
+	//int processStatus;
+
+	/* Creating socket file descriptor */
+	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+	{
+		perror("socket failed");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Forcefully attaching socket to the port 8080 */
+	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)))
+	{
+		perror("setsockopt");
+		exit(EXIT_FAILURE);
+	}
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = INADDR_ANY;
+	address.sin_port = htons( PORT );
+
+	/* Forcefully attaching socket to the port 8080 */
+	if (bind(server_fd, (struct sockaddr *)&address, sizeof(address))<0)
+	{
+		perror("bind failed");
+		exit(EXIT_FAILURE);
+	}
+	if (listen(server_fd, 3) < 0)
+	{
+		perror("listen");
+		exit(EXIT_FAILURE);
+	}
+	if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0)
+	{
+		perror("accept");
+		exit(EXIT_FAILURE);
+	}
+	*ret_socket = new_socket;
+}
 
 int transmitCommand(char* message){
 	/* sets socket stream */

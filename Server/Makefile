@@ -16,7 +16,7 @@ build: $(TARGET)
 #$(TARGET): server.o
 $(TARGET): server.o fpga.o 
 #$(TARGET): server.o hps.o ADLX345.o fpga.o
-	$(CC) $(LDFLAGS)   $^ -o $@  -lpthread -lrt
+	$(CC) $(LDFLAGS)   $^ -o $@  -lpthread -lrt -lm
 #	$(CC) $(LDFLAGS)  $^ -o $@  -ldl -lmpeg2  -lmpeg2convert -lpthread
 %.o : %.c
 	$(CC) $(CFLAGS) -c $< -o $@

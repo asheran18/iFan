@@ -19,6 +19,8 @@
 #define MAX_FIFO_SIZE 10
 #define MAX_COMMAND_LENGTH 100
 #define MAX_ARGS 5
+#define MAX_ADC_VAL 4095
+#define BETA 3977
 
 //-----------------------------------------------------------------------------
 // Global variables
@@ -52,7 +54,7 @@ command * getCommand(char * buffer);
 /* Decodes and processes the command by calling the correct function with the correct args*/
 int processCommand(command * cmd);
 /* Sends current fan information to the client to be displayed in the app*/
-void * transmitData();
+void * transmitData(void * new_socket);
 /* Watches for incoming packets and adds them to the processing queue */
 void * checkMailbox();
 /* Checks if the fan should be on or off according to the schedule */
@@ -83,7 +85,7 @@ void OPCODEacceptUser(bool tok);
 //-----------------------------------------------------------------------------
 // Transmission to the client
 /* Function for transmitting current temperature */
-void SENDtemp();
+void SENDtemp(int socket);
 /* Function for transmitting current fan mode*/
 void SENDmode();
 /* Function for transmitting current uptime*/
@@ -95,6 +97,7 @@ void SENDschedule();
 
 //-----------------------------------------------------------------------------
 // Utilities
+void setupTCPConnection(int * ret_socket);
 /* Transmits 1 message across the socket */
 int transmitCommand(char* message);
 /* Converts a string of time into a workable format */
