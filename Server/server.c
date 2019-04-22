@@ -20,15 +20,19 @@
 #include "server.h"
 
 int main(int argc, char const *argv[]) {
-	/* Some initialization */
+	/* Some lock initialization */
 	pthread_mutex_init (&mutex_mbox, NULL);
 	pthread_mutex_init (&mutex_sch, NULL);
-
-	T_THRESH = -1; //-1 represents threshold not set
+	pthread_mutex_init (&mutex_thr, NULL);
+	
+	/* Some global initialization */
+	FAN_IS_ON = false;
+	T_THRESH = 1000; //1000 is default threshold: you will not survive in these conditions anyway
 	SCH_ON = false;
 	SCH_START = 0;
 	SCH_END = 0;
 	startTime = 0;
+	wasAutoCooling = false;
 
 	/* Init memory map of the FPGA*/
 	if(!FPGAInit()){
@@ -65,6 +69,13 @@ int main(int argc, char const *argv[]) {
 		printf("FATAL SERVER ERROR - THREAD CREATION FAILED\n");
 	}
 
+	/* Let's start the monitor to handle user-set temperature thresholds */
+	pthread_t tempMonitor;
+	int tm = pthread_create(&tempMonitor, NULL, checkThreshold, NULL);
+	if (tm != 0) {
+		printf("FATAL SERVER ERROR - THREAD CREATION FAILED\n");
+	}
+
 	/* This is where login functionality should be immplemented*/
 	/* Pseudocode:
 		while(not logged in && password is set){
@@ -95,8 +106,6 @@ int main(int argc, char const *argv[]) {
 		}
 		pthread_mutex_unlock(&mutex_mbox);
 		sleep(1);
-		/* Begin Data to Send */
-		//transmitData();
 	}
 
 	return 0;
@@ -171,12 +180,15 @@ int processCommand(command* cmd){
 		int temp = atoi((char*)cmd->args[0]);
 		OPCODEsetThr(temp);		//reads args[0] for what temp to set threshold as
 		return 0;
+
 	} else if(strcmp(cmd->opcode, "CLR_THR") == 0){
-		OPCODEsetThr(-1);
+		OPCODEclrThr();
 		return 0;
+
 	} else if(strcmp(cmd->opcode, "SET_PWD") == 0){
 		password = (char*)cmd->args[0];
 		return 0;
+
 	} else if(strcmp(cmd->opcode, "TRY_PWD") == 0){
 	/*
 		if(hash(password) == args[0]){
@@ -187,22 +199,27 @@ int processCommand(command* cmd){
 	*/
 		return 0;
 	}
+
 	else {
 	// Invalid command
 		return -1;
 	}
 }
 
+//-----------------------------------------------------------------------------
+// Threaded operations
+
 void * transmitData(void * new_socket){
 	/* When the connection has been established, start sending data */
 	printf("Server sending thread ready...\n");
 	while(1) {
+		SENDmode(*((int *)new_socket));
 		SENDtemp(*((int *)new_socket));
 		SENDuptime(*((int *)new_socket));
 		SENDthreshold(*((int *)new_socket));
 		SENDschedule(*((int *)new_socket));
 		// This esentially defines the data refresh rate on the client side - can adjust
-		sleep(4);
+		sleep(10);
 	}
 	pthread_exit(NULL);
 }
@@ -247,7 +264,7 @@ void * checkSchedule() {
 		time(&rawtime);
 		timeinfo = localtime(&rawtime);
 		//get hours and minutes of current time
-	  int hours = timeinfo->tm_hour;
+	  	int hours = timeinfo->tm_hour;
 		int minutes = timeinfo->tm_min;
 		//converts minutes and hours into just minutes
 		int currTime = (60*hours+minutes) - (4*60);
@@ -255,8 +272,11 @@ void * checkSchedule() {
 		if (SCH_ON) {
 			// Per the spec, turn on at <inclusive> and off at <exclusive>
 			if(currTime >= SCH_START && currTime < SCH_END){
-				printf("Within scheduled time...Setting fan to ON\n");
-				setFan(FAN_ON);
+				// Only set the pin if it is not already set
+				if (FAN_IS_ON == false) {
+					printf("Within scheduled time...Setting fan to ON\n");
+					setFan(FAN_ON);
+				}				
 				schWasOn = true;
 			}
 			// We were on a schedule, but it has expired
@@ -267,7 +287,37 @@ void * checkSchedule() {
 				SCH_ON = false;
 			}
 		}
+		else if (SCH_ON == false && schWasOn && FAN_IS_ON) {
+			printf("Schedule cleared during scheduled ON time...Setting fan to OFF\n");
+			setFan(FAN_OFF);
+			schWasOn = false;
+		} 
 		pthread_mutex_unlock(&mutex_sch);
+		sleep(3);
+	}
+	pthread_exit(NULL);
+}
+
+void * checkThreshold() {
+	while(1) {		
+		pthread_mutex_lock(&mutex_thr);
+		float currTemp = getCurrentTemperature();		
+		if (currTemp > T_THRESH) {
+			/* If the temperature rises above the threshold, the fan goes on */
+			if (FAN_IS_ON == false) {
+				printf("Temperature threshold has been exceeded, beginning auto-cooling...\n");
+				setFan(FAN_ON);
+			}
+			wasAutoCooling = true;		
+		}
+		/* Add some hysteresis to the threshold so we don't turn back on right away */
+		else if (currTemp < (T_THRESH - TEMP_HYST) && wasAutoCooling) { 
+			/* Only Turn the fan off it is was on because the threshold was exceeded */
+			printf("Desirable temperature reached, turning off auto-cooling...\n");
+			setFan(FAN_OFF);
+			wasAutoCooling = false;		
+		}
+		pthread_mutex_unlock(&mutex_thr);
 		sleep(3);
 	}
 	pthread_exit(NULL);
@@ -334,6 +384,10 @@ void OPCODEsetThr(int temperature){
 	T_THRESH = temperature;
 }
 
+void OPCODEclrThr() {
+	T_THRESH = 1000;
+}
+
 void OPCODEacceptUser(bool tok){
 	if(tok == true){
 		//send tok == yes (1) to client
@@ -350,25 +404,14 @@ void OPCODEacceptUser(bool tok){
 //-----------------------------------------------------------------------------
 // Transmission to the client
 
+void SENDmode(int socket){
+	char buffer[MAX_COMMAND_LENGTH] = {0};
+	sprintf(buffer, "FAN_MOD,%d", FAN_IS_ON);
+	send(socket, buffer, sizeof(buffer), 0);
+}
+
 void SENDtemp(int socket){
-	uint32_t adcValue;
-	int address = 0;
-	ReadADC(&adcValue, address);
-	float Temperature = 0;
-	/************ Its fucked beyond this point ******************/
-	// Some computation is necessary to get the temperature
-	float res = (4095.0/(float)adcValue - 1.0);
-	res = 5.0 * 9960.0 - res + 9960.0;
-	res = res/5.0;
-	float tmp = res/2200.0;
-	tmp = log(tmp);
-	float tBeta = 1.0/(float)BETA;
-	tmp = tBeta*tmp;
-	Temperature = 1.0/298.15 + tmp;
-	Temperature = 1.0/Temperature;
-	Temperature = Temperature - 273.15;
-	fprintf(stderr, "ADC = %d, Temperature = %f, R = %f\n", adcValue, Temperature, res);
-	/************ Its fucked above this point *******************/
+	float Temperature = getCurrentTemperature();
 	char buffer[MAX_COMMAND_LENGTH] = {0};
 	sprintf(buffer, "AMB_TMP,%f", Temperature);
 	send(socket, buffer, sizeof(buffer), 0);
@@ -381,11 +424,14 @@ void SENDuptime(int socket){
 		struct tm * timeinfo;
 		time_t rawtime;
 		time(&rawtime);
+		/* Boilerplate to get the time, ignore */
 		timeinfo = localtime(&rawtime);
 		int hours = timeinfo->tm_hour;
 		int minutes = timeinfo->tm_min;
 		float currTime = (60*hours+minutes) - (4*60);
 		upTime = currTime - startTime;
+		/* Minutes to hours */		
+		upTime = upTime / 60.0;
 	}
 	char buffer[MAX_COMMAND_LENGTH] = {0};
 	sprintf(buffer, "FAN_UPT,%f", upTime);
@@ -394,7 +440,7 @@ void SENDuptime(int socket){
 
 void SENDthreshold(int socket){
 	char buffer[MAX_COMMAND_LENGTH] = {0};
-	sprintf(buffer, "CUR_THR,%f", T_THRESH);
+	sprintf(buffer, "CUR_THR,%d", T_THRESH);
 	send(socket, buffer, sizeof(buffer), 0);
 }
 
@@ -459,15 +505,17 @@ void setFan(int mode){
 		time_t rawtime;
 		time(&rawtime);
 		timeinfo = localtime(&rawtime);
-	  int hours = timeinfo->tm_hour;
+	  	int hours = timeinfo->tm_hour;
 		int minutes = timeinfo->tm_min;
 		startTime = (60*hours+minutes) - (4*60);
 		/* Turn the pin on */
 		*((uint32_t *)m_gpio_base) = 0xFFFFFFFF;
+		FAN_IS_ON = true;
 	} else {
 		/* Stop counting the Up Time */
 		startTime = 0;
 		*((uint32_t *)m_gpio_base) = 0x0;
+		FAN_IS_ON = false;
 	}
 }
 
@@ -477,3 +525,33 @@ int strToTime(char* str){
   	time += atoi(&str[3]);
   	return time;
 }
+
+float getCurrentTemperature(char* str) {
+	uint32_t adcValue;
+	int address = 0;
+	ReadADC(&adcValue, address);
+	float Temperature = 0;
+	/************ Its fucked beyond this point ******************/
+	// Some computation is necessary to get the temperature
+	float res = (4095.0/(float)adcValue - 1.0);
+	res = 5.0 * 9960.0 - res + 9960.0;
+	res = res/5.0;
+	float tmp = res/2200.0;
+	tmp = log(tmp);
+	float tBeta = 1.0/(float)BETA;
+	tmp = tBeta*tmp;
+	Temperature = 1.0/298.15 + tmp;
+	Temperature = 1.0/Temperature;
+	Temperature = Temperature - 273.15;
+	//fprintf(stderr, "ADC = %d, Temperature = %f, R = %f\n", adcValue, Temperature, res);
+	/************ Its fucked above this point *******************/
+	return Temperature;
+}
+
+
+
+
+
+
+
+

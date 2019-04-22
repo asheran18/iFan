@@ -21,21 +21,26 @@
 #define MAX_ARGS 5
 #define MAX_ADC_VAL 4095
 #define BETA 3977
+#define TEMP_HYST 1
 
 //-----------------------------------------------------------------------------
 // Global variables
 /******** TODO: Some of this should be done using more permenant vars in a meta file ********/
+/* The global status of the fan */
+bool FAN_IS_ON;
 /* For fan scheduling */
 bool SCH_ON;
 int SCH_START;
 int SCH_END;
 /* For fan thresholding */
 int T_THRESH;
+bool wasAutoCooling;
 /* For keeping track of up time */
 float startTime;
 /* For threading */
 pthread_mutex_t mutex_mbox;
 pthread_mutex_t mutex_sch;
+pthread_mutex_t mutex_thr;
 /* For authentication */
 char * password;
 /* For job processing */
@@ -63,6 +68,8 @@ void * transmitData(void * new_socket);
 void * checkMailbox();
 /* Checks if the fan should be on or off according to the schedule */
 void * checkSchedule();
+/* Checks if the threshold has been surpassed and the fan should turn on */
+void * checkThreshold();
 
 //-----------------------------------------------------------------------------
 // FIFO queue operations - assumed to be performed on gloabal variable "cmdQueue"
@@ -83,11 +90,15 @@ void OPCODEsetSchedule(int start, int end);
 void OPCODEclrSch();
 /* Handles opcode SET_THR */
 void OPCODEsetThr(int temperature);
+/* Handles opcode CLR_THR */
+void OPCODEclrThr();
 /* Handles logging in, sends TOK to client */
 void OPCODEacceptUser(bool tok);
 
 //-----------------------------------------------------------------------------
 // Transmission to the client
+/* Function for transmitting if the fan is on or off */
+void SENDmode(int socket);
 /* Function for transmitting current temperature */
 void SENDtemp(int socket);
 /* Function for transmitting current uptime*/
@@ -105,5 +116,7 @@ void setupTCPConnection(int * ret_socket);
 int strToTime(char* str);
 /* Turns the fan to mode: 1 = ON, 0 = OFF */
 void setFan(int mode);
+/* Returns the current temperature reading from the sensor in deg. F */
+float getCurrentTemperature();
 
 #endif
