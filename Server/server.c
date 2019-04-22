@@ -28,6 +28,7 @@ int main(int argc, char const *argv[]) {
 	SCH_ON = false;
 	SCH_START = 0;
 	SCH_END = 0;
+	startTime = 0;
 
 	/* Init memory map of the FPGA*/
 	if(!FPGAInit()){
@@ -49,7 +50,7 @@ int main(int argc, char const *argv[]) {
 	if (m != 0) {
 		printf("FATAL SERVER ERROR - THREAD CREATION FAILED\n");
 	}
-		
+
 	/* Let's start the sender to give the client the fan data */
 	pthread_t sender;
 	int t = pthread_create(&sender, NULL, transmitData, (void *)socket);
@@ -90,7 +91,7 @@ int main(int argc, char const *argv[]) {
 			else {
 				printf("WARNING - Invalid syntax or memory error results in ignored command\n");
 			}
-			
+
 		}
 		pthread_mutex_unlock(&mutex_mbox);
 		sleep(1);
@@ -195,24 +196,27 @@ int processCommand(command* cmd){
 void * transmitData(void * new_socket){
 	/* When the connection has been established, start sending data */
 	printf("Server sending thread ready...\n");
-	
 	while(1) {
 		SENDtemp(*((int *)new_socket));
+		SENDuptime(*((int *)new_socket));
+		SENDthreshold(*((int *)new_socket));
+		SENDschedule(*((int *)new_socket));
+		// This esentially defines the data refresh rate on the client side - can adjust
 		sleep(4);
 	}
-	pthread_exit(NULL);	
+	pthread_exit(NULL);
 }
 
 void * checkMailbox(void * new_socket) {
 	/* When the connection has been established, start receiving data */
 	printf("Server receiving thread ready...\n");
-	
+
 	/* Setup for command execution */
 	int enqueueSuccess;
-	int valread;	
+	int valread;
 	char buffer[MAX_COMMAND_LENGTH] = {0};
 
-	/* Process the incomming commands */	
+	/* Process the incomming commands */
 	while(1){
 		/* Get the socket and make sure it is valid */
 		valread = read(*((int *)new_socket), buffer, sizeof(buffer));
@@ -243,13 +247,13 @@ void * checkSchedule() {
 		time(&rawtime);
 		timeinfo = localtime(&rawtime);
 		//get hours and minutes of current time
-	  	int hours = timeinfo->tm_hour;
+	  int hours = timeinfo->tm_hour;
 		int minutes = timeinfo->tm_min;
 		//converts minutes and hours into just minutes
 		int currTime = (60*hours+minutes) - (4*60);
 		pthread_mutex_lock(&mutex_sch);
 		if (SCH_ON) {
-			// Per the spec, turn on at <inclusive> and off at <exclusive>	
+			// Per the spec, turn on at <inclusive> and off at <exclusive>
 			if(currTime >= SCH_START && currTime < SCH_END){
 				printf("Within scheduled time...Setting fan to ON\n");
 				setFan(FAN_ON);
@@ -260,7 +264,7 @@ void * checkSchedule() {
 				printf("Outside of schedule...Setting fan to OFF\n");
 				setFan(FAN_OFF);
 				schWasOn = false;
-				SCH_ON = false;				
+				SCH_ON = false;
 			}
 		}
 		pthread_mutex_unlock(&mutex_sch);
@@ -350,40 +354,54 @@ void SENDtemp(int socket){
 	uint32_t adcValue;
 	int address = 0;
 	ReadADC(&adcValue, address);
+	float Temperature = 0;
 	/************ Its fucked beyond this point ******************/
 	// Some computation is necessary to get the temperature
 	float res = (4095.0/(float)adcValue - 1.0);
 	res = 5.0 * 9960.0 - res + 9960.0;
 	res = res/5.0;
- 
 	float tmp = res/2200.0;
 	tmp = log(tmp);
 	float tBeta = 1.0/(float)BETA;
 	tmp = tBeta*tmp;
-	float Temperature = 1.0/298.15 + tmp;
-	Temperature = 1.0/Temperature; 	
+	Temperature = 1.0/298.15 + tmp;
+	Temperature = 1.0/Temperature;
 	Temperature = Temperature - 273.15;
 	fprintf(stderr, "ADC = %d, Temperature = %f, R = %f\n", adcValue, Temperature, res);
 	/************ Its fucked above this point *******************/
 	char buffer[MAX_COMMAND_LENGTH] = {0};
-	sprintf(buffer, "%f", Temperature);
+	sprintf(buffer, "AMB_TMP,%f", Temperature);
 	send(socket, buffer, sizeof(buffer), 0);
 }
 
-void SENDmode(){
-
+void SENDuptime(int socket){
+	float upTime = 0;
+	if (startTime != 0) {
+		/* Compute how long it has been running by taking the difference between now and the global variable */
+		struct tm * timeinfo;
+		time_t rawtime;
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
+		int hours = timeinfo->tm_hour;
+		int minutes = timeinfo->tm_min;
+		float currTime = (60*hours+minutes) - (4*60);
+		upTime = currTime - startTime;
+	}
+	char buffer[MAX_COMMAND_LENGTH] = {0};
+	sprintf(buffer, "FAN_UPT,%f", upTime);
+	send(socket, buffer, sizeof(buffer), 0);
 }
 
-void SENDuptime(){
-
+void SENDthreshold(int socket){
+	char buffer[MAX_COMMAND_LENGTH] = {0};
+	sprintf(buffer, "CUR_THR,%f", T_THRESH);
+	send(socket, buffer, sizeof(buffer), 0);
 }
 
-void SENDthreshold(){
-
-}
-
-void SENDschedule(){
-
+void SENDschedule(int socket){
+	char buffer[MAX_COMMAND_LENGTH] = {0};
+	sprintf(buffer, "CUR_SCH,%d,%d,%d", SCH_ON, SCH_START, SCH_END);
+	send(socket, buffer, sizeof(buffer), 0);
 }
 
 //-----------------------------------------------------------------------------
@@ -434,17 +452,21 @@ void setupTCPConnection(int * ret_socket) {
 	*ret_socket = new_socket;
 }
 
-int transmitCommand(char* message){
-	/* sets socket stream */
-	//send(server_fd, message, sizeof(message), 0);
-	/* Returns 0 if no errors */
-	return 0;
-}
-
 void setFan(int mode){
 	if(mode == FAN_ON){
+		/* Start counting the Up Time */
+		struct tm * timeinfo;
+		time_t rawtime;
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
+	  int hours = timeinfo->tm_hour;
+		int minutes = timeinfo->tm_min;
+		startTime = (60*hours+minutes) - (4*60);
+		/* Turn the pin on */
 		*((uint32_t *)m_gpio_base) = 0xFFFFFFFF;
 	} else {
+		/* Stop counting the Up Time */
+		startTime = 0;
 		*((uint32_t *)m_gpio_base) = 0x0;
 	}
 }

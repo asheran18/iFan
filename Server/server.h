@@ -31,7 +31,8 @@ int SCH_START;
 int SCH_END;
 /* For fan thresholding */
 int T_THRESH;
-/* For socket programming */
+/* For keeping track of up time */
+float startTime;
 /* For threading */
 pthread_mutex_t mutex_mbox;
 pthread_mutex_t mutex_sch;
@@ -53,7 +54,10 @@ typedef struct {
 command * getCommand(char * buffer);
 /* Decodes and processes the command by calling the correct function with the correct args*/
 int processCommand(command * cmd);
-/* Sends current fan information to the client to be displayed in the app*/
+
+//-----------------------------------------------------------------------------
+// Threaded operations
+/* Sends current fan information to the client to be displayed in the app */
 void * transmitData(void * new_socket);
 /* Watches for incoming packets and adds them to the processing queue */
 void * checkMailbox();
@@ -86,20 +90,17 @@ void OPCODEacceptUser(bool tok);
 // Transmission to the client
 /* Function for transmitting current temperature */
 void SENDtemp(int socket);
-/* Function for transmitting current fan mode*/
-void SENDmode();
 /* Function for transmitting current uptime*/
-void SENDuptime();
+void SENDuptime(int socket);
 /* Function for transmitting current threshold */
-void SENDthreshold();
+void SENDthreshold(int socket);
 /* Function for transmitting current schedule */
-void SENDschedule();
+void SENDschedule(int socket);
 
 //-----------------------------------------------------------------------------
 // Utilities
+/* Sets up a TCP connection on <ret_socket> */
 void setupTCPConnection(int * ret_socket);
-/* Transmits 1 message across the socket */
-int transmitCommand(char* message);
 /* Converts a string of time into a workable format */
 int strToTime(char* str);
 /* Turns the fan to mode: 1 = ON, 0 = OFF */
