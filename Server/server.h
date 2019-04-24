@@ -32,6 +32,8 @@ bool FAN_IS_ON;
 bool SCH_ON;
 int SCH_START;
 int SCH_END;
+char * SCH_START_STR;
+char * SCH_END_STR;
 /* For fan thresholding */
 int T_THRESH;
 bool wasAutoCooling;

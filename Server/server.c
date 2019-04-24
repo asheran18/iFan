@@ -24,13 +24,15 @@ int main(int argc, char const *argv[]) {
 	pthread_mutex_init (&mutex_mbox, NULL);
 	pthread_mutex_init (&mutex_sch, NULL);
 	pthread_mutex_init (&mutex_thr, NULL);
-	
+
 	/* Some global initialization */
 	FAN_IS_ON = false;
 	T_THRESH = 1000; //1000 is default threshold: you will not survive in these conditions anyway
 	SCH_ON = false;
 	SCH_START = 0;
 	SCH_END = 0;
+	SCH_START_STR = {0};
+	SCH_END_STR = {0};
 	startTime = 0;
 	wasAutoCooling = false;
 
@@ -167,6 +169,8 @@ int processCommand(command* cmd){
 		return 0;
 
 	} else if(strcmp(cmd->opcode, "SET_SCH") == 0) {
+		SCH_START_STR = (char*)cmd->args[0]; // Save the strings for easy return back to the client
+		SCH_END_STR = (char*)cmd->args[1];
 		int start = strToTime((char*)cmd->args[0]);
 		int end = strToTime((char*)cmd->args[1]);
 		OPCODEsetSchedule(start,end);
@@ -276,7 +280,7 @@ void * checkSchedule() {
 				if (FAN_IS_ON == false) {
 					printf("Within scheduled time...Setting fan to ON\n");
 					setFan(FAN_ON);
-				}				
+				}
 				schWasOn = true;
 			}
 			// We were on a schedule, but it has expired
@@ -291,7 +295,7 @@ void * checkSchedule() {
 			printf("Schedule cleared during scheduled ON time...Setting fan to OFF\n");
 			setFan(FAN_OFF);
 			schWasOn = false;
-		} 
+		}
 		pthread_mutex_unlock(&mutex_sch);
 		sleep(3);
 	}
@@ -299,23 +303,23 @@ void * checkSchedule() {
 }
 
 void * checkThreshold() {
-	while(1) {		
+	while(1) {
 		pthread_mutex_lock(&mutex_thr);
-		float currTemp = getCurrentTemperature();		
+		float currTemp = getCurrentTemperature();
 		if (currTemp > T_THRESH) {
 			/* If the temperature rises above the threshold, the fan goes on */
 			if (FAN_IS_ON == false) {
 				printf("Temperature threshold has been exceeded, beginning auto-cooling...\n");
 				setFan(FAN_ON);
 			}
-			wasAutoCooling = true;		
+			wasAutoCooling = true;
 		}
 		/* Add some hysteresis to the threshold so we don't turn back on right away */
-		else if (currTemp < (T_THRESH - TEMP_HYST) && wasAutoCooling) { 
+		else if (currTemp < (T_THRESH - TEMP_HYST) && wasAutoCooling) {
 			/* Only Turn the fan off it is was on because the threshold was exceeded */
 			printf("Desirable temperature reached, turning off auto-cooling...\n");
 			setFan(FAN_OFF);
-			wasAutoCooling = false;		
+			wasAutoCooling = false;
 		}
 		pthread_mutex_unlock(&mutex_thr);
 		sleep(3);
@@ -377,6 +381,8 @@ void OPCODEclrSch(){
 	SCH_ON = false;
 	SCH_START = 0;
 	SCH_END = 0;
+	SCH_START_STR = {0};
+	SCH_END_STR = {0};
 	pthread_mutex_unlock(&mutex_sch);
 }
 
@@ -430,7 +436,7 @@ void SENDuptime(int socket){
 		int minutes = timeinfo->tm_min;
 		float currTime = (60*hours+minutes) - (4*60);
 		upTime = currTime - startTime;
-		/* Minutes to hours */		
+		/* Minutes to hours */
 		upTime = upTime / 60.0;
 	}
 	char buffer[MAX_COMMAND_LENGTH] = {0};
@@ -446,7 +452,7 @@ void SENDthreshold(int socket){
 
 void SENDschedule(int socket){
 	char buffer[MAX_COMMAND_LENGTH] = {0};
-	sprintf(buffer, "CUR_SCH,%d,%d,%d", SCH_ON, SCH_START, SCH_END);
+	sprintf(buffer, "CUR_SCH,%d,%s,%s", SCH_ON, SCH_START_STR, SCH_END_STR);
 	send(socket, buffer, sizeof(buffer), 0);
 }
 
@@ -547,11 +553,3 @@ float getCurrentTemperature(char* str) {
 	/************ Its fucked above this point *******************/
 	return Temperature;
 }
-
-
-
-
-
-
-
-
