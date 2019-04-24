@@ -31,8 +31,8 @@ int main(int argc, char const *argv[]) {
 	SCH_ON = false;
 	SCH_START = 0;
 	SCH_END = 0;
-	SCH_START_STR = {0};
-	SCH_END_STR = {0};
+	SCH_START_STR = "00:00";
+	SCH_END_STR = "00:00";
 	startTime = 0;
 	wasAutoCooling = false;
 
@@ -218,10 +218,15 @@ void * transmitData(void * new_socket){
 	printf("Server sending thread ready...\n");
 	while(1) {
 		SENDmode(*((int *)new_socket));
+		printf("Sent Mode...\n");
 		SENDtemp(*((int *)new_socket));
+		printf("Sent Temp...\n");
 		SENDuptime(*((int *)new_socket));
+		printf("Sent uptime...\n");
 		SENDthreshold(*((int *)new_socket));
+		printf("Sent Threshold...\n");
 		SENDschedule(*((int *)new_socket));
+		printf("Sent Schedule...\n");
 		// This esentially defines the data refresh rate on the client side - can adjust
 		sleep(10);
 	}
@@ -381,8 +386,8 @@ void OPCODEclrSch(){
 	SCH_ON = false;
 	SCH_START = 0;
 	SCH_END = 0;
-	SCH_START_STR = {0};
-	SCH_END_STR = {0};
+	SCH_START_STR = "00:00";
+	SCH_END_STR = "00:00";
 	pthread_mutex_unlock(&mutex_sch);
 }
 
