@@ -35,6 +35,7 @@ int main(int argc, char const *argv[]) {
 	SCH_END_STR = "00:00";
 	startTime = 0;
 	wasAutoCooling = false;
+	simTemp = 65; // Start the simulated temperature at 65 deg F
 
 	/* Init memory map of the FPGA*/
 	if(!FPGAInit()){
@@ -538,23 +539,37 @@ int strToTime(char* str){
 }
 
 float getCurrentTemperature(char* str) {
-	uint32_t adcValue;
-	int address = 0;
-	ReadADC(&adcValue, address);
-	float Temperature = 0;
-	/************ Its fucked beyond this point ******************/
-	// Some computation is necessary to get the temperature
-	float res = (4095.0/(float)adcValue - 1.0);
-	res = 5.0 * 9960.0 - res + 9960.0;
-	res = res/5.0;
-	float tmp = res/2200.0;
-	tmp = log(tmp);
-	float tBeta = 1.0/(float)BETA;
-	tmp = tBeta*tmp;
-	Temperature = 1.0/298.15 + tmp;
-	Temperature = 1.0/Temperature;
-	Temperature = Temperature - 273.15;
-	//fprintf(stderr, "ADC = %d, Temperature = %f, R = %f\n", adcValue, Temperature, res);
-	/************ Its fucked above this point *******************/
-	return Temperature;
+
+	/*
+	*
+	* The following code is meant to translate the reading from the ADC header
+	* temperature sensor or thermosister into a temperature reading in degrees
+	* F. However, the sensor given in the lab does not produce consistent or
+	* accurate enough data for this application.
+	*
+	* A better sensor is required for the product to be used as intended, but for
+	* the purposes of demonstrating all features under realistic conditions, we
+	* simulate the temperature by randomly increasing, decreasing, or not changing
+	* the simulated value at every time this function is called.
+	*
+	*/
+
+	// uint32_t adcValue;
+	// int address = 0;
+	// ReadADC(&adcValue, address);
+	// // Some computation is necessary to get the temperature
+	// float res = (4095.0/(float)adcValue - 1.0);
+	// res = 5.0 * 9960.0 - res + 9960.0;
+	// res = res/5.0;
+	// float tmp = res/2200.0;
+	// tmp = log(tmp);
+	// float tBeta = 1.0/(float)BETA;
+	// tmp = tBeta*tmp;
+	// Temperature = 1.0/298.15 + tmp;
+	// Temperature = 1.0/Temperature;
+	// Temperature = Temperature - 273.15;
+	// //fprintf(stderr, "ADC = %d, Temperature = %f, R = %f\n", adcValue, Temperature, res);
+	// return Temperature;
+
+	return simTemp;
 }

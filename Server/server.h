@@ -47,6 +47,8 @@ pthread_mutex_t mutex_thr;
 char * password;
 /* For job processing */
 char * mailboxQueue[MAX_FIFO_SIZE] = {0};
+/* For simulating temperature */
+float simTemp;
 
 //-----------------------------------------------------------------------------
 // Structures for easy interfacing
