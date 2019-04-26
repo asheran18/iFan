@@ -48,7 +48,7 @@ char * password;
 /* For job processing */
 char * mailboxQueue[MAX_FIFO_SIZE] = {0};
 /* For simulating temperature */
-float simTemp;
+int simTemp;
 
 //-----------------------------------------------------------------------------
 // Structures for easy interfacing
@@ -102,15 +102,15 @@ void OPCODEacceptUser(bool tok);
 //-----------------------------------------------------------------------------
 // Transmission to the client
 /* Function for transmitting if the fan is on or off */
-void SENDmode(int socket);
+char * SENDmode();
 /* Function for transmitting current temperature */
-void SENDtemp(int socket);
+char * SENDtemp();
 /* Function for transmitting current uptime*/
-void SENDuptime(int socket);
+char * SENDuptime();
 /* Function for transmitting current threshold */
-void SENDthreshold(int socket);
+char * SENDthreshold();
 /* Function for transmitting current schedule */
-void SENDschedule(int socket);
+char * SENDschedule();
 
 //-----------------------------------------------------------------------------
 // Utilities
@@ -121,6 +121,6 @@ int strToTime(char* str);
 /* Turns the fan to mode: 1 = ON, 0 = OFF */
 void setFan(int mode);
 /* Returns the current temperature reading from the sensor in deg. F */
-float getCurrentTemperature();
+int getCurrentTemperature();
 
 #endif

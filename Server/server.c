@@ -218,18 +218,30 @@ void * transmitData(void * new_socket){
 	/* When the connection has been established, start sending data */
 	printf("Server sending thread ready...\n");
 	while(1) {
-		SENDmode(*((int *)new_socket));
-		printf("Sent Mode...\n");
-		SENDtemp(*((int *)new_socket));
-		printf("Sent Temp...\n");
-		SENDuptime(*((int *)new_socket));
-		printf("Sent uptime...\n");
-		SENDthreshold(*((int *)new_socket));
-		printf("Sent Threshold...\n");
-		SENDschedule(*((int *)new_socket));
-		printf("Sent Schedule...\n");
+		/* Build the string */
+		char * data = malloc(MAX_COMMAND_LENGTH*5);
+		strcpy(data, SENDmode());
+		strcat(data, ",");
+		strcat(data, SENDtemp());
+		strcat(data, ",");
+		strcat(data, SENDuptime());
+		strcat(data, ",");
+		strcat(data, SENDthreshold());
+		strcat(data, ",");
+		strcat(data, SENDschedule());
+		/* Send the data */
+		int err = send(*((int*)new_socket), data, MAX_COMMAND_LENGTH*5, MSG_NOSIGNAL);
+		if (err == -1) {
+			/* Attempt to re-establish connection */
+			printf("Connection to client was lost. Waiting for reconnect to continue sending data...\n");
+			setupTCPConnection((int*)new_socket);
+		}
+		else {
+			printf("Sent data to client: %s\n", data);
+		}
+		free(data);
 		// This esentially defines the data refresh rate on the client side - can adjust
-		sleep(10);
+		sleep(1);
 	}
 	pthread_exit(NULL);
 }
@@ -416,20 +428,29 @@ void OPCODEacceptUser(bool tok){
 //-----------------------------------------------------------------------------
 // Transmission to the client
 
-void SENDmode(int socket){
-	char buffer[MAX_COMMAND_LENGTH] = {0};
-	sprintf(buffer, "FAN_MOD,%d", FAN_IS_ON);
-	send(socket, buffer, sizeof(buffer), 0);
+char * SENDmode(){
+	// char buffer[MAX_COMMAND_LENGTH] = {0};
+	// sprintf(buffer, "FAN_MOD,%d", FAN_IS_ON);
+	// send(socket, buffer, sizeof(buffer), 0);
+	
+	char * buffer = calloc(MAX_COMMAND_LENGTH, sizeof(char));	
+	sprintf(buffer, "%d", FAN_IS_ON);
+	return buffer;
 }
 
-void SENDtemp(int socket){
-	float Temperature = getCurrentTemperature();
-	char buffer[MAX_COMMAND_LENGTH] = {0};
-	sprintf(buffer, "AMB_TMP,%f", Temperature);
-	send(socket, buffer, sizeof(buffer), 0);
+char * SENDtemp(){
+	// float Temperature = getCurrentTemperature();
+	// char buffer[MAX_COMMAND_LENGTH] = {0};
+	// sprintf(buffer, "AMB_TMP,%f", Temperature);
+	// send(socket, buffer, sizeof(buffer), 0);
+
+	int Temperature = getCurrentTemperature();
+	char * buffer = calloc(MAX_COMMAND_LENGTH, sizeof(char));
+	sprintf(buffer, "%d", Temperature);
+	return buffer;
 }
 
-void SENDuptime(int socket){
+char * SENDuptime(){
 	float upTime = 0;
 	if (startTime != 0) {
 		/* Compute how long it has been running by taking the difference between now and the global variable */
@@ -445,21 +466,33 @@ void SENDuptime(int socket){
 		/* Minutes to hours */
 		upTime = upTime / 60.0;
 	}
-	char buffer[MAX_COMMAND_LENGTH] = {0};
-	sprintf(buffer, "FAN_UPT,%f", upTime);
-	send(socket, buffer, sizeof(buffer), 0);
+	// char buffer[MAX_COMMAND_LENGTH] = {0};
+	// sprintf(buffer, "FAN_UPT,%f", upTime);
+	// send(socket, buffer, sizeof(buffer), 0);
+
+	char * buffer = calloc(MAX_COMMAND_LENGTH, sizeof(char));	
+	sprintf(buffer, "%f", upTime);
+	return buffer;
 }
 
-void SENDthreshold(int socket){
-	char buffer[MAX_COMMAND_LENGTH] = {0};
-	sprintf(buffer, "CUR_THR,%d", T_THRESH);
-	send(socket, buffer, sizeof(buffer), 0);
+char * SENDthreshold(int socket){
+	// char buffer[MAX_COMMAND_LENGTH] = {0};
+	// sprintf(buffer, "CUR_THR,%d", T_THRESH);
+	// send(socket, buffer, sizeof(buffer), 0);
+
+	char * buffer = calloc(MAX_COMMAND_LENGTH, sizeof(char));
+	sprintf(buffer, "%d", T_THRESH);
+	return buffer;
 }
 
-void SENDschedule(int socket){
-	char buffer[MAX_COMMAND_LENGTH] = {0};
-	sprintf(buffer, "CUR_SCH,%d,%s,%s", SCH_ON, SCH_START_STR, SCH_END_STR);
-	send(socket, buffer, sizeof(buffer), 0);
+char * SENDschedule(int socket){
+	// char buffer[MAX_COMMAND_LENGTH] = {0};
+	// sprintf(buffer, "CUR_SCH,%d,%s,%s", SCH_ON, SCH_START_STR, SCH_END_STR);
+	// send(socket, buffer, sizeof(buffer), 0);
+
+	char * buffer = calloc(MAX_COMMAND_LENGTH, sizeof(char));	
+	sprintf(buffer, "%d,%s,%s", SCH_ON, SCH_START_STR, SCH_END_STR);
+	return buffer;
 }
 
 //-----------------------------------------------------------------------------
@@ -508,6 +541,7 @@ void setupTCPConnection(int * ret_socket) {
 		exit(EXIT_FAILURE);
 	}
 	*ret_socket = new_socket;
+	printf("Connection to client successful.\n");
 }
 
 void setFan(int mode){
@@ -538,7 +572,7 @@ int strToTime(char* str){
   	return time;
 }
 
-float getCurrentTemperature(char* str) {
+int getCurrentTemperature(char* str) {
 
 	/*
 	*
@@ -571,5 +605,59 @@ float getCurrentTemperature(char* str) {
 	// //fprintf(stderr, "ADC = %d, Temperature = %f, R = %f\n", adcValue, Temperature, res);
 	// return Temperature;
 
+	/*
+	*
+	* Below is how the temperature is simulated. A random varaible is generated
+	* to say whether or not the temperature should increase, deacrease, or stay.
+	* 
+	* When the fan is off, the variable will be biased toward temperature staying
+	* the same. When the fan is on, the varaible is still biased toward staying the same,
+	* but has a greater chance of dropping the temperature.
+	* 
+	* Also, when the fan is off, there is a greater chance the temperature will increase 
+	* than decrease.
+	*
+	* Obviously, for the purpose of demonstration, the temperature changes quick than real life
+	*
+	*/
+	
+	
+	float rv = (1.0*rand() / RAND_MAX);
+	if (FAN_IS_ON) {
+		if (rv < .1) simTemp--;
+		else if (rv > .97) simTemp++;
+		// Else the temperature does not change 
+	}
+	else {
+		if (rv < .01) simTemp--;
+		else if (rv > .97) simTemp++;
+		// Else the temperature does not change 
+	}
+		 
 	return simTemp;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

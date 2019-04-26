@@ -80,7 +80,7 @@ void * checkMailbox(void * new_socket) {
 	/* Setup for command execution */
 	int enqueueSuccess;
 	int valread;
-	char buffer[MAX_COMMAND_LENGTH] = {0};
+	char buffer[MAX_COMMAND_LENGTH*5] = {0};
 
 	/* Process the incomming commands */
 	while(1){
